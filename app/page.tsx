@@ -198,6 +198,185 @@ function AIAnalysisCard({ analysis, isLoading }: { analysis: string; isLoading: 
   );
 }
 
+// NEW: Heat Advisory Panel
+function HeatAdvisoryPanel({ riskLabel }: { riskLabel: string }) {
+  const advisories: Record<string, { color: string; border: string; icon: string; tips: string[] }> = {
+    CRITICAL: {
+      color: "text-red-400",
+      border: "border-red-500/30",
+      icon: "🚨",
+      tips: [
+        "Avoid all outdoor activity between 11AM–5PM",
+        "Seek air-conditioned spaces immediately",
+        "Check on elderly neighbors and children",
+        "Emergency cooling centers are open citywide",
+      ],
+    },
+    HIGH: {
+      color: "text-orange-400",
+      border: "border-orange-500/30",
+      icon: "⚠️",
+      tips: [
+        "Limit strenuous outdoor activity",
+        "Drink water every 20 minutes even if not thirsty",
+        "Wear light, loose-fitting clothing",
+        "Never leave children or pets in parked vehicles",
+      ],
+    },
+    MODERATE: {
+      color: "text-yellow-400",
+      border: "border-yellow-500/30",
+      icon: "🌤️",
+      tips: [
+        "Stay hydrated throughout the day",
+        "Take breaks in shade during outdoor activity",
+        "Monitor local heat index updates",
+        "Wear sunscreen and a hat outdoors",
+      ],
+    },
+    LOW: {
+      color: "text-green-400",
+      border: "border-green-500/30",
+      icon: "✅",
+      tips: [
+        "Conditions are relatively comfortable",
+        "Stay hydrated as a general precaution",
+        "Enjoy outdoor activities with normal care",
+        "Monitor forecast for upcoming heat changes",
+      ],
+    },
+  };
+  const advisory = advisories[riskLabel] || advisories["LOW"];
+  return (
+    <div className={`rounded-xl border ${advisory.border} bg-gradient-to-br from-[#12121a] to-[#0f0f14] p-6 shadow-lg mb-8`}>
+      <div className="flex items-center gap-3 mb-5">
+        <span className="text-2xl">{advisory.icon}</span>
+        <h2 className="text-lg font-semibold text-gray-200">Heat Advisory</h2>
+        <span className={`ml-auto text-xs font-bold font-mono uppercase ${advisory.color}`}>{riskLabel} RISK</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {advisory.tips.map((tip, i) => (
+          <div key={i} className="flex items-start gap-2 p-3 rounded-lg bg-[#0a0a0f]/60 border border-gray-800/40">
+            <span className={`mt-0.5 flex-shrink-0 text-xs font-bold font-mono ${advisory.color}`}>{String(i + 1).padStart(2, '0')}</span>
+            <span className="text-gray-300 text-xs leading-relaxed">{tip}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// NEW: City Comparison Panel
+type CitySnapshot = {
+  name: string;
+  temp: number;
+  humidity: number;
+  heatIndex: number;
+  riskLabel: string;
+  windSpeed: number;
+};
+
+function CityComparisonPanel({ API_KEY, calcHeatIndex, getRiskLevel }: {
+  API_KEY: string | undefined;
+  calcHeatIndex: (t: number, h: number) => number;
+  getRiskLevel: (hi: number) => { label: string; variant: "red" | "orange" };
+}) {
+  const [cityA, setCityA] = useState("");
+  const [cityB, setCityB] = useState("");
+  const [dataA, setDataA] = useState<CitySnapshot | null>(null);
+  const [dataB, setDataB] = useState<CitySnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchSnapshot = async (name: string): Promise<CitySnapshot | null> => {
+    const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(name)}&appid=${API_KEY}&units=metric`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    const temp = Math.round(d.main.temp * 10) / 10;
+    const humidity = d.main.humidity;
+    const heatIndex = calcHeatIndex(temp, humidity);
+    const risk = getRiskLevel(heatIndex);
+    return { name: d.name, temp, humidity, heatIndex, riskLabel: risk.label, windSpeed: Math.round(d.wind.speed * 3.6 * 10) / 10 };
+  };
+
+  const compare = async () => {
+    if (!cityA.trim() || !cityB.trim()) { setError("Enter both cities."); return; }
+    setLoading(true); setError(""); setDataA(null); setDataB(null);
+    const [a, b] = await Promise.all([fetchSnapshot(cityA), fetchSnapshot(cityB)]);
+    if (!a || !b) { setError("One or both cities not found."); setLoading(false); return; }
+    setDataA(a); setDataB(b); setLoading(false);
+  };
+
+  const hotter = dataA && dataB ? (dataA.heatIndex >= dataB.heatIndex ? dataA.name : dataB.name) : null;
+
+  const MetricRow = ({ label, valA, valB, unit }: { label: string; valA: number; valB: number; unit: string }) => {
+    const winnerA = valA >= valB;
+    return (
+      <div className="grid grid-cols-3 items-center gap-2 py-2 border-b border-gray-800/40">
+        <span className={`text-right text-sm font-mono font-bold ${winnerA ? "text-red-400" : "text-gray-400"}`}>{valA}{unit}</span>
+        <span className="text-center text-[10px] text-gray-500 uppercase tracking-wider">{label}</span>
+        <span className={`text-left text-sm font-mono font-bold ${!winnerA ? "text-red-400" : "text-gray-400"}`}>{valB}{unit}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-800/50 bg-gradient-to-br from-[#12121a] to-[#0f0f14] p-6 shadow-lg mb-8">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="p-2.5 rounded-lg bg-orange-500/10">
+          <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-gray-200">City vs City Comparison</h2>
+      </div>
+      <div className="flex gap-3 mb-4">
+        <input
+          placeholder="City A (e.g. Mumbai)"
+          value={cityA} onChange={e => setCityA(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && compare()}
+          className="flex-1 px-4 py-2.5 rounded-lg bg-[#12121a] border border-gray-800 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 transition-all duration-300 text-sm"
+        />
+        <span className="flex items-center text-gray-500 font-bold">vs</span>
+        <input
+          placeholder="City B (e.g. Chennai)"
+          value={cityB} onChange={e => setCityB(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && compare()}
+          className="flex-1 px-4 py-2.5 rounded-lg bg-[#12121a] border border-gray-800 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-orange-500/50 focus:ring-2 focus:ring-orange-500/20 transition-all duration-300 text-sm"
+        />
+        <button onClick={compare} disabled={loading}
+          className="px-5 py-2.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold hover:from-orange-600 hover:to-orange-700 transition-all duration-300 shadow-lg shadow-orange-500/25 hover:scale-105 disabled:opacity-50 text-sm">
+          {loading ? "..." : "Compare"}
+        </button>
+      </div>
+      {error && <p className="text-red-400 text-xs font-mono mb-3">{error}</p>}
+      {dataA && dataB && (
+        <div>
+          {hotter && (
+            <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+              <span className="text-red-400 font-bold text-sm">🔥 {hotter} is hotter by {Math.abs(dataA.heatIndex - dataB.heatIndex).toFixed(1)}°C heat index</span>
+            </div>
+          )}
+          <div className="grid grid-cols-3 mb-2">
+            <span className="text-center text-sm font-bold text-orange-400">{dataA.name}</span>
+            <span className="text-center text-[10px] text-gray-600 uppercase">Metric</span>
+            <span className="text-center text-sm font-bold text-orange-400">{dataB.name}</span>
+          </div>
+          <MetricRow label="Temperature" valA={dataA.temp} valB={dataB.temp} unit="°C" />
+          <MetricRow label="Humidity" valA={dataA.humidity} valB={dataB.humidity} unit="%" />
+          <MetricRow label="Heat Index" valA={dataA.heatIndex} valB={dataB.heatIndex} unit="°C" />
+          <MetricRow label="Wind km/h" valA={dataA.windSpeed} valB={dataB.windSpeed} unit="" />
+          <div className="grid grid-cols-3 items-center gap-2 pt-2">
+            <span className={`text-center text-xs font-bold px-2 py-1 rounded-full border ${dataA.riskLabel === "CRITICAL" || dataA.riskLabel === "HIGH" ? "text-red-400 border-red-500/30 bg-red-500/10" : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"}`}>{dataA.riskLabel}</span>
+            <span className="text-center text-[10px] text-gray-500 uppercase">Risk</span>
+            <span className={`text-center text-xs font-bold px-2 py-1 rounded-full border ${dataB.riskLabel === "CRITICAL" || dataB.riskLabel === "HIGH" ? "text-red-400 border-red-500/30 bg-red-500/10" : "text-yellow-400 border-yellow-500/30 bg-yellow-500/10"}`}>{dataB.riskLabel}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function calcHeatIndex(tempC: number, humidity: number): number {
   const T = tempC * 9/5 + 32;
   const R = humidity;
@@ -228,7 +407,7 @@ export default function HeatSenseDashboard() {
     { day: "Fri", temp: 36, humidity: 75 },
   ]);
   const [weatherData, setWeatherData] = useState({
-    temp: 38.5, humidity: 72, heatIndex: 42.3, riskLabel: "HIGH", riskVariant: "red" as "red" | "orange",
+    temp: 38.5, humidity: 72, heatIndex: 42.3, riskLabel: "HIGH", riskVariant: "red" as "red" | "orange", windSpeed: 14.4,
   });
 
   const API_KEY = process.env.NEXT_PUBLIC_WEATHER_API_KEY;
@@ -272,8 +451,9 @@ export default function HeatSenseDashboard() {
       const humidity = data.main.humidity;
       const heatIndex = calcHeatIndex(temp, humidity);
       const risk = getRiskLevel(heatIndex);
+      const windSpeed = Math.round(data.wind.speed * 3.6 * 10) / 10; // m/s → km/h
       setCity(data.name);
-      setWeatherData({ temp, humidity, heatIndex, riskLabel: risk.label, riskVariant: risk.variant });
+      setWeatherData({ temp, humidity, heatIndex, riskLabel: risk.label, riskVariant: risk.variant, windSpeed });
 
       const fRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(cityName)}&appid=${API_KEY}&units=metric&cnt=40`);
       if (fRes.ok) {
@@ -349,7 +529,8 @@ export default function HeatSenseDashboard() {
           <span className="text-orange-400 font-bold text-sm">{city}</span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* 5 stat cards now */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           <StatCard title="Temperature" value={weatherData.temp.toString()} unit="°C"
             icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>}
           />
@@ -358,6 +539,9 @@ export default function HeatSenseDashboard() {
           />
           <StatCard title="Heat Index" value={weatherData.heatIndex.toString()} unit="°C" variant="red"
             icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" /></svg>}
+          />
+          <StatCard title="Wind Speed" value={weatherData.windSpeed.toString()} unit="km/h"
+            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>}
           />
           <StatCard title="Risk Level" value={weatherData.riskLabel} unit="" variant={weatherData.riskVariant}
             icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>}
@@ -383,7 +567,10 @@ export default function HeatSenseDashboard() {
 
         <ForecastStrip forecast={forecast} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* NEW: Heat Advisory */}
+        <HeatAdvisoryPanel riskLabel={weatherData.riskLabel} />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <AIAnalysisCard analysis={aiAnalysis} isLoading={isAILoading} />
           <div className="rounded-xl border border-gray-800/50 bg-gradient-to-br from-[#12121a] to-[#0f0f14] p-6 shadow-lg">
             <div className="flex items-center gap-3 mb-6">
@@ -402,6 +589,9 @@ export default function HeatSenseDashboard() {
           </div>
         </div>
 
+        {/* NEW: City Comparison */}
+        <CityComparisonPanel API_KEY={API_KEY} calcHeatIndex={calcHeatIndex} getRiskLevel={getRiskLevel} />
+
         <footer className="mt-12 pt-8 border-t border-gray-800/50">
           <div className="flex items-center justify-between text-sm text-gray-500">
             <span className="font-medium">© 2026 HeatSense Intelligence Platform</span>
@@ -411,7 +601,7 @@ export default function HeatSenseDashboard() {
                 <span>All systems operational</span>
               </div>
               <span className="text-gray-700">|</span>
-              <span className="font-mono text-xs">v2.1.0</span>
+              <span className="font-mono text-xs">v2.2.0</span>
             </div>
           </div>
         </footer>
